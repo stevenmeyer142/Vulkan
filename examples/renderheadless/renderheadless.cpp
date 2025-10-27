@@ -37,6 +37,13 @@
 #include "VulkanTools.h"
 #include "CommandLineParser.hpp"
 
+#include <sstream>
+
+void setupDebugging(VkInstance instance, VkDebugReportFlagsEXT flags, VkDebugReportCallbackEXT callBack);
+PFN_vkCreateDebugUtilsMessengerEXT gCreateDebugUtilsMessengerEXT;
+PFN_vkDestroyDebugUtilsMessengerEXT gDestroyDebugUtilsMessengerEXT;
+VkDebugUtilsMessengerEXT debugUtilsMessenger;
+
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
 android_app* androidapp;
 #endif
@@ -156,6 +163,55 @@ public:
 		vkDestroyFence(device, fence, nullptr);
 	}
 
+    static VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
+            VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+            VkDebugUtilsMessageTypeFlagsEXT messageType,
+            const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+            void* pUserData)
+        {
+            // Select prefix depending on flags passed to the callback
+            std::string prefix("");
+
+            if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
+                prefix = "VERBOSE: ";
+            }
+            else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+                prefix = "INFO: ";
+            }
+            else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+                prefix = "WARNING: ";
+            }
+            else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+                prefix = "ERROR: ";
+            }
+
+
+            // Display message to default output (console/logcat)
+            std::stringstream debugMessage;
+            debugMessage << prefix << "[" << pCallbackData->messageIdNumber << "][" << pCallbackData->pMessageIdName << "] : " << pCallbackData->pMessage;
+
+    #if defined(__ANDROID__)
+            if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+                LOGE("%s", debugMessage.str().c_str());
+            } else {
+                LOGD("%s", debugMessage.str().c_str());
+            }
+    #else
+            if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+                std::cerr << debugMessage.str() << "\n";
+            } else {
+                std::cout << debugMessage.str() << "\n";
+            }
+            fflush(stdout);
+    #endif
+
+
+            // The return value of this callback controls whether the Vulkan call that caused the validation message will be aborted or not
+            // We return VK_FALSE as we DON'T want Vulkan calls that cause a validation message to abort
+            // If you instead want to have calls abort, pass in VK_TRUE and the function will return VK_ERROR_VALIDATION_FAILED_EXT
+            return VK_FALSE;
+        }
+
 	VulkanExample()
 	{
 		LOG("Running headless rendering example\n");
@@ -255,7 +311,7 @@ public:
 			VkDebugReportCallbackCreateInfoEXT debugReportCreateInfo = {};
 			debugReportCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
 			debugReportCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
-			debugReportCreateInfo.pfnCallback = (PFN_vkDebugReportCallbackEXT)debugMessageCallback;
+			debugReportCreateInfo.pfnCallback = (PFN_vkDebugReportCallbackEXT)debugUtilsMessengerCallback;
 
 			// We have to explicitly load this function.
 			PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetInstanceProcAddr(instance, "vkCreateDebugReportCallbackEXT"));
@@ -972,3 +1028,4 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 #endif
+
