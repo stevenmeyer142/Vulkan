@@ -68,11 +68,11 @@ VkResult VulkanExampleBase::createInstance()
 	}
 
 #if (defined(VK_USE_PLATFORM_IOS_MVK) || defined(VK_USE_PLATFORM_MACOS_MVK) || defined(VK_USE_PLATFORM_METAL_EXT))
-	// SRS - When running on iOS/macOS with MoltenVK, enable VK_KHR_get_physical_device_properties2 if not already enabled by the example (required by VK_KHR_portability_subset)
-	if (std::find(enabledInstanceExtensions.begin(), enabledInstanceExtensions.end(), VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME) == enabledInstanceExtensions.end())
-	{
-		enabledInstanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-	}
+    // SRS - When running on iOS/macOS with MoltenVK, enable VK_KHR_get_physical_device_properties2 if not already enabled by the example (required by VK_KHR_portability_subset)
+    if (std::find(enabledInstanceExtensions.begin(), enabledInstanceExtensions.end(), VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME) == enabledInstanceExtensions.end())
+    {
+        enabledInstanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+    }
 #endif
 
 	// Enabled requested instance extensions
@@ -133,6 +133,14 @@ VkResult VulkanExampleBase::createInstance()
 		instanceCreateInfo.enabledExtensionCount = (uint32_t)instanceExtensions.size();
 		instanceCreateInfo.ppEnabledExtensionNames = instanceExtensions.data();
 	}
+
+    for (const char * extension : instanceExtensions) {
+        std::cout << "Instance extension: " << extension << std::endl;
+    }
+
+    std::cout << "flag bits: " << instanceCreateInfo.flags << std::endl;
+    std::cout << "settings.validation: " << settings.validation << std::endl;
+
 
 	// The VK_LAYER_KHRONOS_validation contains all current validation functionality.
 	// Note that on Android this layer requires at least NDK r20
@@ -1112,6 +1120,12 @@ bool VulkanExampleBase::initVulkan()
 
 	// Derived examples can enable extensions based on the list of supported extensions read from the physical device
 	getEnabledExtensions();
+
+    std::cout << "Enabled device extensions" << "\n";
+    for (auto &extension : enabledDeviceExtensions)
+    {
+        std::cout << "\t" << extension << "\n";
+    }
 
 	result = vulkanDevice->createLogicalDevice(enabledFeatures, enabledDeviceExtensions, deviceCreatepNextChain);
 	if (result != VK_SUCCESS) {

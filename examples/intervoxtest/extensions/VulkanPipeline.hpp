@@ -56,7 +56,9 @@ public:
     virtual void updateUniformBuffer(RenderCommandSettings &renderCommandSettings) = 0;
     virtual uint32_t getUniformBufferCount() = 0;
     virtual void Draw(VkCommandBuffer drawCommandBuffer, RenderCommandSettings &renderCommandSettings) = 0;
-    virtual void setupLayoutsAndPipeline(const std::string &shadersPath, VkRenderPass renderPass, VkPipelineCache pipelineCache) = 0;
+    virtual void setupPipeline(const std::string &shadersPath, VkRenderPass renderPass, VkPipelineCache pipelineCache) = 0;
+    virtual void createDescriptorSetLayout() = 0;
+ //   virtual void setupLayoutsAndPipeline(const std::string &shadersPath, VkRenderPass renderPass, VkPipelineCache pipelineCache) = 0;
     virtual void setupDescripterSets(VkDescriptorPool pool) = 0;
     virtual ~VulkanPipeline() {}
 };

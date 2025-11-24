@@ -28,7 +28,9 @@ public:
 
     virtual void updateUniformBuffer(RenderCommandSettings &renderCommandSettings) override;
 
-    virtual void setupLayoutsAndPipeline(const std::string &shadersPath, VkRenderPass renderPass, VkPipelineCache pipelineCache) override;
+    virtual void setupPipeline(const std::string &shadersPath, VkRenderPass renderPass, VkPipelineCache pipelineCache) override;
+    virtual void createDescriptorSetLayout() override;
+
 
     virtual void setupDescripterSets(VkDescriptorPool pool) override;
 
@@ -37,10 +39,10 @@ public:
     void setMeshColor(int32_t meshID, const glm::vec3 &color);
 
 private:
-    void setupDescriptorSetLayout();
+ //   void setupDescriptorSetLayout();
 
-    void createPipeline(const std::string &shadersPath, VkRenderPass renderPass,
-                        VkPipelineCache pipelineCache);
+ //   void createPipeline(const std::string &shadersPath, VkRenderPass renderPass,
+ //                       VkPipelineCache pipelineCache);
 
     void setupVertexDescriptions();
 

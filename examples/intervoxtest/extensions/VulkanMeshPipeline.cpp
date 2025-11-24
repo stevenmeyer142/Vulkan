@@ -69,10 +69,12 @@ void VulkanMeshPipeline::updateUniformBuffer(RenderCommandSettings &renderComman
     }
 }
 
-void VulkanMeshPipeline::createPipeline(const std::string &shadersPath, VkRenderPass renderPass,
+void VulkanMeshPipeline::setupPipeline(const std::string &shadersPath, VkRenderPass renderPass,
                                         VkPipelineCache pipelineCache)
 {
  
+    setupVertexDescriptions();
+    
     VkPipelineLayoutCreateInfo pPipelineLayoutCreateInfo =
         vks::initializers::pipelineLayoutCreateInfo(
             &fDescriptorSetLayout,
@@ -166,7 +168,7 @@ void VulkanMeshPipeline::createPipeline(const std::string &shadersPath, VkRender
     VK_CHECK_RESULT(vkCreateGraphicsPipelines(fDevice, pipelineCache, 1, &pipelineCreateInfo, nullptr, &fPipeline));
 }
 
-void VulkanMeshPipeline::setupDescriptorSetLayout()
+void VulkanMeshPipeline::createDescriptorSetLayout()
 {
 
     std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings =
@@ -220,12 +222,12 @@ void VulkanMeshPipeline::setupVertexDescriptions()
 }
 
 // this should only need to be called once
-void VulkanMeshPipeline::setupLayoutsAndPipeline(const std::string &shadersPath, VkRenderPass renderPass, VkPipelineCache pipelineCache)
-{
-    setupDescriptorSetLayout();
-    setupVertexDescriptions();
-    createPipeline(shadersPath, renderPass, pipelineCache);
-}
+//void VulkanMeshPipeline::setupLayoutsAndPipeline(const std::string &shadersPath, VkRenderPass renderPass, VkPipelineCache pipelineCache)
+//{
+//    setupDescriptorSetLayout();
+//    setupVertexDescriptions();
+//    createPipeline(shadersPath, renderPass, pipelineCache);
+//}
 
 // this must be called every time the meshes change
 void VulkanMeshPipeline::setupDescripterSets(VkDescriptorPool pool)

@@ -11,6 +11,8 @@
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
 
+#define CONVERT_TO_MESH_PIPELINES
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,14 +29,35 @@
 #include <vulkan/vulkan.h>
 #include "vulkanexamplebase.h"
 
+#ifdef CONVERT_TO_MESH_PIPELINES
+#include <vector>
+#include <map>
+#include "extensions/VulkanMeshPipeline.hpp"
+#include "extensions/VulkanPipeline.hpp"
+#endif
+
 // We want to keep GPU and CPU busy. To do that we may start building a new command buffer while the previous one is still being executed
 // This number defines how many frames may be worked on simultaneously at once
 // Increasing this number may improve performance but will also introduce additional latency
-#define MAX_CONCURRENT_FRAMES 2
+#define MAX_CONCURRENT_FRAMES 1
 
 class VulkanExample : public VulkanExampleBase
 {
+
 public:
+#ifdef CONVERT_TO_MESH_PIPELINES
+    // Excluding this for test.
+    // std::vector<uint8_t> fImageData;
+    //std::map<VulkanPipelineTypes, std::shared_ptr<VulkanPipeline>> fPipelines;
+    //bool fInitialized = false;
+    
+
+  //  int32_t fPipelinesVersion = 0;
+  //  std::map<std::string, VkCommandBuffer> fContextCommandBuffers;
+
+    std::shared_ptr<VulkanMeshPipeline> fMeshPipeline;
+    RenderCommandSettings fRenderCommandSettings;
+#else
 	// Vertex layout used in this example
 	struct Vertex {
 		float position[3];
@@ -53,6 +76,7 @@ public:
 		VkBuffer buffer{ VK_NULL_HANDLE };
 		uint32_t count{ 0 };
 	} indices;
+
 
 	// Uniform buffer block object
 	struct UniformBuffer {
@@ -98,7 +122,7 @@ public:
 	// The descriptor set layout describes the shader binding layout (without actually referencing descriptor)
 	// Like the pipeline layout it's pretty much a blueprint and can be used with different descriptor sets as long as their layout matches
 	VkDescriptorSetLayout descriptorSetLayout{ VK_NULL_HANDLE };
-
+#endif
 	// Synchronization primitives
 	// Synchronization is an important concept of Vulkan that OpenGL mostly hid away. Getting this right is crucial to using Vulkan.
 
@@ -113,17 +137,28 @@ public:
 	// To select the correct sync and command objects, we need to keep track of the current frame
 	uint32_t currentFrame{ 0 };
 
+
 	VulkanExample() : VulkanExampleBase()
 	{
 		title = "Basic indexed triangle";
 		// To keep things simple, we don't use the UI overlay from the framework
 		settings.overlay = false;
+        
+#ifdef CONVERT_TO_MESH_PIPELINES
+        fRenderCommandSettings.fCamera.type = Camera::CameraType::lookat;
+        fRenderCommandSettings.fCamera.setPosition(glm::vec3(0.0f, 0.0f, -2.5f));
+        fRenderCommandSettings.fCamera.setRotation(glm::vec3(0.0f));
+        fRenderCommandSettings.fCamera.setPerspective(60.0f, (float)width / (float)height, 1.0f, 256.0f);
+        fRenderCommandSettings.fMeshPipelineSettings.addMeshID(DEBUG_MESH_ID);
+#else
 		// Setup a default look-at camera
 		camera.type = Camera::CameraType::lookat;
 		camera.setPosition(glm::vec3(0.0f, 0.0f, -2.5f));
 		camera.setRotation(glm::vec3(0.0f));
 		camera.setPerspective(60.0f, (float)width / (float)height, 1.0f, 256.0f);
 		// Values not set here are initialized in the base class constructor
+#endif
+
 	}
 
 	~VulkanExample() override
@@ -131,6 +166,7 @@ public:
 		// Clean up used Vulkan resources
 		// Note: Inherited destructor cleans up resources stored in base class
 		if (device) {
+#ifndef CONVERT_TO_MESH_PIPELINES
 			vkDestroyPipeline(device, pipeline, nullptr);
 			vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 			vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
@@ -138,7 +174,7 @@ public:
 			vkFreeMemory(device, vertices.memory, nullptr);
 			vkDestroyBuffer(device, indices.buffer, nullptr);
 			vkFreeMemory(device, indices.memory, nullptr);
-			vkDestroyCommandPool(device, commandPool, nullptr);
+#endif // !CONVERT_TO_MESH_PIPELINES			vkDestroyCommandPool(device, commandPool, nullptr);
 			for (size_t i = 0; i < presentCompleteSemaphores.size(); i++) {
 				vkDestroySemaphore(device, presentCompleteSemaphores[i], nullptr);
 			}
@@ -147,10 +183,13 @@ public:
 			}
 			for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
 				vkDestroyFence(device, waitFences[i], nullptr);
-				vkDestroyBuffer(device, uniformBuffers[i].buffer, nullptr);
+#ifndef CONVERT_TO_MESH_PIPELINES
+                vkDestroyBuffer(device, uniformBuffers[i].buffer, nullptr);
 				vkFreeMemory(device, uniformBuffers[i].memory, nullptr);
+#endif
 			}
 		}
+
 	}
 
 	// This function is used to request a device memory type that supports all the property flags we request (e.g. device local, host visible)
@@ -222,9 +261,16 @@ public:
 	// Also uploads them to device local memory using staging and initializes vertex input and attribute binding to match the vertex shader
 	void createVertexBuffer()
 	{
+#ifdef CONVERT_TO_MESH_PIPELINES
+        fMeshPipeline = std::make_shared<VulkanMeshPipeline>(device);
+        std::shared_ptr<VulkanMesh> mesh = std::make_shared<VulkanMesh>(vulkanDevice);
+        mesh->CreateDebugMesh(queue);
+        fMeshPipeline->addMesh(mesh);
+  //      updateDescriptorLayouts();
 		// A note on memory management in Vulkan in general:
 		//	This is a very complex topic and while it's fine for an example application to small individual memory allocations that is not
 		//	what should be done a real-world application, where you should allocate large chunks of memory at once instead.
+#else
 
 		// Setup vertices
 		std::vector<Vertex> vertexBuffer{
@@ -372,6 +418,7 @@ public:
 		vkFreeMemory(device, stagingBuffers.vertices.memory, nullptr);
 		vkDestroyBuffer(device, stagingBuffers.indices.buffer, nullptr);
 		vkFreeMemory(device, stagingBuffers.indices.memory, nullptr);
+#endif
 	}
 
 	// Descriptors are allocated from a pool, that tells the implementation how many and what types of descriptors we are going to use (at maximum)
@@ -382,7 +429,11 @@ public:
 		// This example only one descriptor type (uniform buffer)
 		descriptorTypeCounts[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		// We have one buffer (and as such descriptor) per frame
+#ifdef CONVERT_TO_MESH_PIPELINES
+        descriptorTypeCounts[0].descriptorCount = std::max(fMeshPipeline->getUniformBufferCount(), 1u);
+#else
 		descriptorTypeCounts[0].descriptorCount = MAX_CONCURRENT_FRAMES;
+#endif
 		// For additional types you need to add new entries in the type count list
 		// E.g. for two combined image samplers :
 		// typeCounts[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -406,6 +457,9 @@ public:
 	// So every shader binding should map to one descriptor set layout binding
 	void createDescriptorSetLayout()
 	{
+#ifdef CONVERT_TO_MESH_PIPELINES
+        fMeshPipeline->createDescriptorSetLayout();
+#else
         // Intervox: VulkanMeshPipeline::setupDescriptorSetLayout
 		// Binding 0: Uniform buffer (Vertex shader)
 		VkDescriptorSetLayoutBinding layoutBinding{};
@@ -421,12 +475,16 @@ public:
 		descriptorLayoutCI.pBindings = &layoutBinding;
 		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorLayoutCI, nullptr, &descriptorSetLayout));
         // Intervox middle(missing CreatePipelineLayout: VulkanMeshPipeline::setupDescriptorSetLayout
+#endif
 	}
 
 	// Shaders access data using descriptor sets that "point" at our uniform buffers
 	// The descriptor sets make use of the descriptor set layouts created above 
 	void createDescriptorSets()
 	{
+#ifdef CONVERT_TO_MESH_PIPELINES
+        fMeshPipeline->setupDescripterSets(descriptorPool);
+#else
 		// Allocate one descriptor set per frame from the global descriptor pool
 		for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
 			VkDescriptorSetAllocateInfo allocInfo{};
@@ -455,6 +513,7 @@ public:
 			writeDescriptorSet.dstBinding = 0;
 			vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 		}
+#endif
 	}
 
 	// Create the depth (and stencil) buffer attachments used by our framebuffers
@@ -682,6 +741,9 @@ public:
 
 	void createPipelines()
 	{
+#ifdef CONVERT_TO_MESH_PIPELINES
+        fMeshPipeline->setupPipeline(getShadersPath(), renderPass, pipelineCache);
+#else
         // Intervox: VulkanMeshPipeline::createPipeline
 		// Create the pipeline layout that is used to generate the rendering pipelines that are based on this descriptor set layout
 		// In a more complex scenario you would have different pipeline layouts for different descriptor set layouts that could be reused
@@ -854,10 +916,12 @@ public:
 		// Shader modules are no longer needed once the graphics pipeline has been created
 		vkDestroyShaderModule(device, shaderStages[0].module, nullptr);
 		vkDestroyShaderModule(device, shaderStages[1].module, nullptr);
+#endif
 	}
 
 	void createUniformBuffers()
 	{
+#ifndef CONVERT_TO_MESH_PIPELINES  // This is already handled by VulkanMesh::prepareUniformBuffer
 		// Prepare and initialize the per-frame uniform buffer blocks containing shader uniforms
 		// Single uniforms like in OpenGL are no longer present in Vulkan. All hader uniforms are passed via uniform buffer blocks
 		VkMemoryRequirements memReqs;
@@ -893,7 +957,7 @@ public:
 			// We map the buffer once, so we can update it without having to map it again
 			VK_CHECK_RESULT(vkMapMemory(device, uniformBuffers[i].memory, 0, sizeof(ShaderData), 0, (void**)&uniformBuffers[i].mapped));
 		}
-
+#endif
 	}
 
 	void prepare() override
@@ -915,6 +979,8 @@ public:
 		if (!prepared)
 			return;
 
+ 
+
 		// Use a fence to wait until the command buffer has finished execution before using it again
 		vkWaitForFences(device, 1, &waitFences[currentFrame], VK_TRUE, UINT64_MAX);
 		VK_CHECK_RESULT(vkResetFences(device, 1, &waitFences[currentFrame]));
@@ -930,7 +996,9 @@ public:
 		else if ((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR)) {
 			throw "Could not acquire the next swap chain image!";
 		}
-
+#ifdef CONVERT_TO_MESH_PIPELINES
+        fMeshPipeline->updateUniformBuffer(fRenderCommandSettings);
+#else
 		// Update the uniform buffer for the next frame
 		ShaderData shaderData{};
 		shaderData.projectionMatrix = camera.matrices.perspective;
@@ -945,7 +1013,7 @@ public:
 		// Unlike in OpenGL all rendering commands are recorded into command buffers that are then submitted to the queue
 		// This allows to generate work upfront in a separate thread
 		// For basic command buffers (like in this sample), recording is so fast that there is no need to offload this
-
+#endif
 		vkResetCommandBuffer(commandBuffers[currentFrame], 0);
 
 		VkCommandBufferBeginInfo cmdBufInfo{};
@@ -989,12 +1057,17 @@ public:
 		scissor.offset.x = 0;
 		scissor.offset.y = 0;
 		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+#ifdef CONVERT_TO_MESH_PIPELINES
+        // Intervox: VulkanMeshPipeline::Draw
+        fMeshPipeline->Draw(commandBuffer, fRenderCommandSettings);
+        
+#else
 		// Bind descriptor set for the current frame's uniform buffer, so the shader uses the data from that buffer for this draw
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &uniformBuffers[currentFrame].descriptorSet, 0, nullptr);
 		// Bind the rendering pipeline
 		// The pipeline (state object) contains all states of the rendering pipeline, binding it will set all the states specified at pipeline creation time
         
-        // Intervox: VulkanMeshPipeline::Draw
+
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 		// Bind triangle vertex buffer (contains position and colors)
         
@@ -1004,7 +1077,7 @@ public:
 		vkCmdBindIndexBuffer(commandBuffer, indices.buffer, 0, VK_INDEX_TYPE_UINT32);
 		// Draw indexed triangle
 		vkCmdDrawIndexed(commandBuffer, indices.count, 1, 0, 0, 0);
-        
+#endif
         // Intervox end: VulkanMeshPipeline::Draw
 		vkCmdEndRenderPass(commandBuffer);
 		// Ending the render pass will add an implicit barrier transitioning the frame buffer color attachment to

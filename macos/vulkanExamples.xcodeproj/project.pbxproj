@@ -21432,6 +21432,7 @@
 				);
 				INSTALL_PATH = "";
 				LIBRARY_STYLE = STATIC;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				OTHER_CFLAGS = "    $(inherited)";
 				OTHER_CPLUSPLUSFLAGS = (
 					"-DVK_USE_PLATFORM_METAL_EXT",
@@ -22287,6 +22288,7 @@
 				);
 				INSTALL_PATH = "";
 				LIBRARY_STYLE = STATIC;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				OTHER_CFLAGS = (
 					"-DNDEBUG",
 					"$(inherited)",
@@ -24837,6 +24839,7 @@
 				);
 				INSTALL_PATH = "";
 				LIBRARY_STYLE = STATIC;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				OTHER_CFLAGS = (
 					"-DNDEBUG",
 					"$(inherited)",
@@ -36562,6 +36565,7 @@
 				);
 				INSTALL_PATH = "";
 				LIBRARY_STYLE = STATIC;
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				OTHER_CFLAGS = (
 					"-DNDEBUG",
 					"$(inherited)",
