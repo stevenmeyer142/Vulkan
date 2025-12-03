@@ -150,6 +150,16 @@ protected:
 	VkPipelineCache pipelineCache{ VK_NULL_HANDLE };
 	// Wraps the swap chain to present images (framebuffers) to the windowing system
 	VulkanSwapChain swapChain;
+#ifdef INTERVOX
+    uint32_t imageCount = 1;
+    VkFormat colorFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    struct FrameBufferAttachment {
+        VkImage image;
+        VkDeviceMemory memory;
+        VkImageView view;
+    };
+    std::vector<FrameBufferAttachment> colorAttachments;
+#endif
 	// Synchronization semaphores
 	struct {
 		// Swap chain image presentation
@@ -413,6 +423,23 @@ public:
 
 	/** @brief (Virtual) Called when the UI overlay is updating, can be used to add custom elements to the overlay */
 	virtual void OnUpdateUIOverlay(vks::UIOverlay *overlay);
+
+#ifdef INTERVOX
+    void setupImageViews();
+    
+    uint32_t getMemoryTypeIndex(uint32_t typeBits, VkMemoryPropertyFlags properties);
+
+protected:
+
+        // Intervox addition
+    uint32_t getImageCount();
+    
+    // Intervox addition
+    VkFormat getColorFormat();
+
+    // Intervox addition
+    VkImage getImageAtIndex(size_t index);
+#endif
 
 #if defined(_WIN32)
 	virtual void OnHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);

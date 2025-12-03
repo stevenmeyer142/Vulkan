@@ -240,6 +240,9 @@ void VulkanExampleBase::prepare()
 	setupDepthStencil();
 	setupRenderPass();
 	createPipelineCache();
+#if INTERVOX
+	setupImageViews();
+#endif
 	setupFrameBuffer();
 	settings.overlay = settings.overlay && (!benchmark.active);
 	if (settings.overlay) {
@@ -948,6 +951,14 @@ VulkanExampleBase::~VulkanExampleBase()
 {
 	// Clean up Vulkan resources
 	swapChain.cleanup();
+#if INTERVOX
+	for (auto colorAttachment : colorAttachments)
+	{
+		vkDestroyImageView(device, colorAttachment.view, nullptr);
+		vkDestroyImage(device, colorAttachment.image, nullptr);
+		vkFreeMemory(device, colorAttachment.memory, nullptr);
+	}
+#endif
 	if (descriptorPool != VK_NULL_HANDLE)
 	{
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -1121,14 +1132,14 @@ bool VulkanExampleBase::initVulkan()
 	// Derived examples can enable extensions based on the list of supported extensions read from the physical device
 	getEnabledExtensions();
 
-    std::cout << "Enabled device extensions" << "\n";
-    for (auto &extension : enabledDeviceExtensions)
-    {
-        std::cout << "\t" << extension << "\n";
-    }
-
+#ifndef INTERVOX
 	result = vulkanDevice->createLogicalDevice(enabledFeatures, enabledDeviceExtensions, deviceCreatepNextChain);
-	if (result != VK_SUCCESS) {
+#else
+	result = vulkanDevice->createLogicalDevice(enabledFeatures, enabledDeviceExtensions, deviceCreatepNextChain,
+													 true, // use swap chain
+													 VK_QUEUE_GRAPHICS_BIT);
+#endif
+	if (result != VK_SUCCESS){
 		vks::tools::exitFatal("Could not create Vulkan device: \n" + vks::tools::errorString(result), result);
 		return false;
 	}
@@ -3080,7 +3091,11 @@ void VulkanExampleBase::createCommandPool()
 {
 	VkCommandPoolCreateInfo cmdPoolInfo = {};
 	cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+#ifndef INTERVOX
 	cmdPoolInfo.queueFamilyIndex = swapChain.queueNodeIndex;
+#else
+	cmdPoolInfo.queueFamilyIndex = vulkanDevice->getQueueFamilyIndex(VK_QUEUE_GRAPHICS_BIT);
+#endif
 	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 	VK_CHECK_RESULT(vkCreateCommandPool(device, &cmdPoolInfo, nullptr, &cmdPool));
 }
@@ -3129,11 +3144,19 @@ void VulkanExampleBase::setupDepthStencil()
 void VulkanExampleBase::setupFrameBuffer()
 {
 	// Create frame buffers for every swap chain image
+#ifndef INTERVOX
 	frameBuffers.resize(swapChain.images.size());
+#else
+	frameBuffers.resize(colorAttachments.size());
+#endif // INTERVOX_LIB
 	for (uint32_t i = 0; i < frameBuffers.size(); i++)
 	{
 		const VkImageView attachments[2] = {
+#ifndef INTERVOX
 			swapChain.imageViews[i],
+#else
+			colorAttachments[i].view,
+#endif
 			// Depth/Stencil attachment is the same for all frame buffers
 			depthStencil.view
 		};
@@ -3153,7 +3176,11 @@ void VulkanExampleBase::setupRenderPass()
 {
 	std::array<VkAttachmentDescription, 2> attachments = {};
 	// Color attachment
+#ifndef INTERVOX
 	attachments[0].format = swapChain.colorFormat;
+#else
+	attachments[0].format = colorFormat;
+#endif
 	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
 	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -3240,7 +3267,9 @@ void VulkanExampleBase::windowResize()
 	// Recreate swap chain
 	width = destWidth;
 	height = destHeight;
+#ifndef INTERVOX
 	createSwapChain();
+#endif
 
 	// Recreate the frame buffers
 	vkDestroyImageView(device, depthStencil.view, nullptr);
@@ -3347,6 +3376,26 @@ void VulkanExampleBase::createSwapChain()
 
 void VulkanExampleBase::OnUpdateUIOverlay(vks::UIOverlay *overlay) {}
 
+#ifdef INTERVOX
+// Intervox addition
+uint32_t VulkanExampleBase::getImageCount()
+{
+	return imageCount;
+}
+
+// Intervox addition
+VkFormat VulkanExampleBase::getColorFormat()
+{
+	return colorFormat;
+}
+        
+// Intervox addition
+VkImage VulkanExampleBase::getImageAtIndex(size_t index)
+
+	return colorAttachments[index].image;
+}
+#endif
+        
 #if defined(_WIN32)
-void VulkanExampleBase::OnHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {};
+        void VulkanExampleBase::OnHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {};
 #endif

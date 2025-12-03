@@ -140,6 +140,8 @@ public:
 
 	VulkanExample() : VulkanExampleBase()
 	{
+        width = 256;
+        height = 256;
 		title = "Basic indexed triangle";
 		// To keep things simple, we don't use the UI overlay from the framework
 		settings.overlay = false;

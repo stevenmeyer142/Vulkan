@@ -35,7 +35,7 @@ VkDeviceSize getAlignedMemory(vks::VulkanDevice *aVulkanDevice,
 int32_t VulkanMesh::gNextMeshID = 1;
 
 VulkanMesh::VulkanMesh(vks::VulkanDevice *aVulkanDevice)
-    : fVulkanDevice(aVulkanDevice), fColor(0, 1, 0) {
+    : fVulkanDevice(aVulkanDevice), fColor(1, 0, 0) {
     fMeshID = gNextMeshID++;
 }
 
@@ -227,9 +227,9 @@ void VulkanMesh::CreateDebugMesh(VkQueue queue) {
     CVertexList vertexList(30);     // initial size;
 
     CTriangle triangle;
-    triangle.AddVertex(1.0, 1.0, 0.0);
-    triangle.AddVertex(-1.0, 1.0, 0.0);
-    triangle.AddVertex(0.0, -1.0, 0.0);
+    triangle.AddVertex(1.0, -1.0, 0.0);
+    triangle.AddVertex(-1.0, -1.0, 0.0);
+    triangle.AddVertex(0.0, 1.0, 0.0);
 
     vertexList.InsertTriangle(&triangle);
     triangleList.InsertTriangle(&triangle);

@@ -65,5 +65,9 @@ struct VulkanDevice
 	void            flushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, bool free = true);
 	bool            extensionSupported(std::string extension);
 	VkFormat        getSupportedDepthFormat(bool checkSamplingSupport);
+
+#ifdef INTERVOX
+    VkDeviceSize getAlignedMemory(VkDeviceSize size); 
+#endif // INTERVOX_LIB
 };
 }        // namespace vks

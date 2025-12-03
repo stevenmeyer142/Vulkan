@@ -36080,6 +36080,7 @@
 					"-fobjc-arc",
 					"-xobjective-c++",
 					"'-std=gnu++20'",
+					"-DINTERVOX",
 				);
 				OTHER_LDFLAGS = (
 					"-Wl,-search_paths_first",
