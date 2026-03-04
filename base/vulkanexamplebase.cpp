@@ -240,9 +240,6 @@ void VulkanExampleBase::prepare()
 	setupDepthStencil();
 	setupRenderPass();
 	createPipelineCache();
-#if INTERVOX
-	setupImageViews();
-#endif
 	setupFrameBuffer();
 	settings.overlay = settings.overlay && (!benchmark.active);
 	if (settings.overlay) {
@@ -776,6 +773,7 @@ void VulkanExampleBase::drawUI(const VkCommandBuffer commandBuffer)
 
 void VulkanExampleBase::prepareFrame()
 {
+#ifndef INTERVOX
 	// Acquire the next image from the swap chain
 	VkResult result = swapChain.acquireNextImage(semaphores.presentComplete, currentBuffer);
 	// Recreate the swapchain if it's no longer compatible with the surface (OUT_OF_DATE)
@@ -789,10 +787,12 @@ void VulkanExampleBase::prepareFrame()
 	else {
 		VK_CHECK_RESULT(result);
 	}
+#endif
 }
 
 void VulkanExampleBase::submitFrame()
 {
+#ifndef INTERVOX
 	VkResult result = swapChain.queuePresent(queue, currentBuffer, semaphores.renderComplete);
 	// Recreate the swapchain if it's no longer compatible with the surface (OUT_OF_DATE) or no longer optimal for presentation (SUBOPTIMAL)
 	if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR)) {
@@ -805,6 +805,7 @@ void VulkanExampleBase::submitFrame()
 		VK_CHECK_RESULT(result);
 	}
 	VK_CHECK_RESULT(vkQueueWaitIdle(queue));
+#endif
 }
 
 VulkanExampleBase::VulkanExampleBase()
@@ -950,14 +951,8 @@ VulkanExampleBase::VulkanExampleBase()
 VulkanExampleBase::~VulkanExampleBase()
 {
 	// Clean up Vulkan resources
+#ifndef INTERVOX
 	swapChain.cleanup();
-#if INTERVOX
-	for (auto colorAttachment : colorAttachments)
-	{
-		vkDestroyImageView(device, colorAttachment.view, nullptr);
-		vkDestroyImage(device, colorAttachment.image, nullptr);
-		vkFreeMemory(device, colorAttachment.memory, nullptr);
-	}
 #endif
 	if (descriptorPool != VK_NULL_HANDLE)
 	{
@@ -1127,7 +1122,8 @@ bool VulkanExampleBase::initVulkan()
 	// Vulkan device creation
 	// This is handled by a separate class that gets a logical device representation
 	// and encapsulates functions related to a device
-	vulkanDevice = new vks::VulkanDevice(physicalDevice);
+    
+ 	vulkanDevice = new vks::VulkanDevice(physicalDevice);
 
 	// Derived examples can enable extensions based on the list of supported extensions read from the physical device
 	getEnabledExtensions();
@@ -1157,8 +1153,9 @@ bool VulkanExampleBase::initVulkan()
 		validFormat = vks::tools::getSupportedDepthFormat(physicalDevice, &depthFormat);
 	}
 	assert(validFormat);
-
+#ifndef INTERVOX
 	swapChain.setContext(instance, physicalDevice, device);
+#endif
 
 	// Create synchronization objects
 	VkSemaphoreCreateInfo semaphoreCreateInfo = vks::initializers::semaphoreCreateInfo();
@@ -3376,25 +3373,8 @@ void VulkanExampleBase::createSwapChain()
 
 void VulkanExampleBase::OnUpdateUIOverlay(vks::UIOverlay *overlay) {}
 
-#ifdef INTERVOX
-// Intervox addition
-uint32_t VulkanExampleBase::getImageCount()
-{
-	return imageCount;
-}
 
-// Intervox addition
-VkFormat VulkanExampleBase::getColorFormat()
-{
-	return colorFormat;
-}
-        
-// Intervox addition
-VkImage VulkanExampleBase::getImageAtIndex(size_t index)
 
-	return colorAttachments[index].image;
-}
-#endif
         
 #if defined(_WIN32)
         void VulkanExampleBase::OnHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {};

@@ -43,6 +43,7 @@
 
 class VulkanExample : public VulkanExampleBase
 {
+    bool fDebugRendered = false;
 
 public:
 #ifdef CONVERT_TO_MESH_PIPELINES
@@ -123,6 +124,16 @@ public:
 	// Like the pipeline layout it's pretty much a blueprint and can be used with different descriptor sets as long as their layout matches
 	VkDescriptorSetLayout descriptorSetLayout{ VK_NULL_HANDLE };
 #endif
+#ifdef INTERVOX
+    uint32_t imageCount = 1;
+    VkFormat colorFormat = VK_FORMAT_R8G8B8A8_UNORM;
+    struct FrameBufferAttachment {
+        VkImage image;
+        VkDeviceMemory memory;
+        VkImageView view;
+    };
+    std::vector<FrameBufferAttachment> colorAttachments;
+#endif
 	// Synchronization primitives
 	// Synchronization is an important concept of Vulkan that OpenGL mostly hid away. Getting this right is crucial to using Vulkan.
 
@@ -160,7 +171,7 @@ public:
 		camera.setPerspective(60.0f, (float)width / (float)height, 1.0f, 256.0f);
 		// Values not set here are initialized in the base class constructor
 #endif
-
+        settings.validation = true;
 	}
 
 	~VulkanExample() override
@@ -176,7 +187,17 @@ public:
 			vkFreeMemory(device, vertices.memory, nullptr);
 			vkDestroyBuffer(device, indices.buffer, nullptr);
 			vkFreeMemory(device, indices.memory, nullptr);
-#endif // !CONVERT_TO_MESH_PIPELINES			vkDestroyCommandPool(device, commandPool, nullptr);
+#endif // !CONVERT_TO_MESH_PIPELINES
+#if INTERVOX
+    for (auto colorAttachment : colorAttachments)
+    {
+        vkDestroyImageView(device, colorAttachment.view, nullptr);
+        vkDestroyImage(device, colorAttachment.image, nullptr);
+        vkFreeMemory(device, colorAttachment.memory, nullptr);
+    }
+#endif
+
+            vkDestroyCommandPool(device, commandPool, nullptr);
 			for (size_t i = 0; i < presentCompleteSemaphores.size(); i++) {
 				vkDestroySemaphore(device, presentCompleteSemaphores[i], nullptr);
 			}
@@ -238,7 +259,7 @@ public:
 		}
 		// Render completion
 		// Semaphore used to ensure that all commands submitted have been finished before submitting the image to the queue
-		renderCompleteSemaphores.resize(swapChain.images.size());
+		renderCompleteSemaphores.resize(getImageCount());
 		for (auto& semaphore : renderCompleteSemaphores) {
 			VkSemaphoreCreateInfo semaphoreCI{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
 			VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreCI, nullptr, &semaphore));
@@ -250,7 +271,11 @@ public:
 		// All command buffers are allocated from a command pool
 		VkCommandPoolCreateInfo commandPoolCI{};
 		commandPoolCI.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+#ifndef INTERVOX
 		commandPoolCI.queueFamilyIndex = swapChain.queueNodeIndex;
+#else
+        commandPoolCI.queueFamilyIndex = vulkanDevice->getQueueFamilyIndex(VK_QUEUE_GRAPHICS_BIT);
+#endif
 		commandPoolCI.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 		VK_CHECK_RESULT(vkCreateCommandPool(device, &commandPoolCI, nullptr, &commandPool));
 
@@ -572,13 +597,26 @@ public:
 	// Note: Override of virtual function in the base class and called from within VulkanExampleBase::prepare
 	void setupFrameBuffer() override
 	{
+#if INTERVOX
+    setupImageViews();
+#endif
+
 		// Create a frame buffer for every image in the swapchain
-		frameBuffers.resize(swapChain.images.size());
+#ifndef INTERVOX
+    frameBuffers.resize(swapChain.images.size());
+#else
+   //     frameBuffers.resize(swapChain.images.size());
+        frameBuffers.resize(colorAttachments.size());
+#endif // INTERVOX_LIB
 		for (size_t i = 0; i < frameBuffers.size(); i++)
 		{
 			std::array<VkImageView, 2> attachments{};
 			// Color attachment is the view of the swapchain image
-			attachments[0] = swapChain.imageViews[i];
+#ifndef INTERVOX
+            attachments[0] = swapChain.imageViews[i];
+#else
+			attachments[0] = colorAttachments[i].view;
+#endif
 			// Depth/Stencil attachment is the same for all frame buffers due to how depth works with current GPUs
 			attachments[1] = depthStencil.view;         
 
@@ -609,15 +647,24 @@ public:
 		std::array<VkAttachmentDescription, 2> attachments{};
 
 		// Color attachment
-		attachments[0].format = swapChain.colorFormat;                                  // Use the color format selected by the swapchain
+#ifndef INTERVOX
+    attachments[0].format = swapChain.colorFormat;
+#else
+   attachments[0].format = colorFormat;
+#endif
+
 		attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;                                 // We don't use multi sampling in this example
 		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;                            // Clear this attachment at the start of the render pass
 		attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;                          // Keep its contents after the render pass is finished (for displaying it)
 		attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;                 // We don't use stencil, so don't care for load
 		attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;               // Same for store
 		attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;                       // Layout at render pass start. Initial doesn't matter, so we use undefined
+#ifndef INTERVOX
 		attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;                   // Layout to which the attachment is transitioned when the render pass is finished
 		                                                                                // As we want to present the color buffer to the swapchain, we transition to PRESENT_KHR
+#else
+        attachments[0].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+#endif
 		// Depth attachment
 		attachments[1].format = depthFormat;                                           // A proper depth format is selected in the example base
 		attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
@@ -964,7 +1011,24 @@ public:
 
 	void prepare() override
 	{
-		VulkanExampleBase::prepare();
+//        createSurface();
+        createCommandPool();
+//        createSwapChain();
+         setupDepthStencil();
+        setupRenderPass();
+        createPipelineCache();
+        setupFrameBuffer();
+//        settings.overlay = settings.overlay && (!benchmark.active);
+//        if (settings.overlay) {
+//            ui.device = vulkanDevice;
+//            ui.queue = queue;
+//            ui.shaders = {
+//                loadShader(getShadersPath() + "base/uioverlay.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
+//                loadShader(getShadersPath() + "base/uioverlay.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT),
+//            };
+//            ui.prepareResources();
+//            ui.preparePipeline(pipelineCache, renderPass, swapChain.colorFormat, depthFormat);
+//        }
 		createSynchronizationPrimitives();
 		createCommandBuffers();
 		createVertexBuffer();
@@ -981,12 +1045,18 @@ public:
 		if (!prepared)
 			return;
 
- 
+        if (fDebugRendered)
+        {
+            sleep(2);
+            return;
+        }
+        fDebugRendered = true;
 
 		// Use a fence to wait until the command buffer has finished execution before using it again
 		vkWaitForFences(device, 1, &waitFences[currentFrame], VK_TRUE, UINT64_MAX);
 		VK_CHECK_RESULT(vkResetFences(device, 1, &waitFences[currentFrame]));
 
+#ifndef INTERVOX
 		// Get the next swap chain image from the implementation
 		// Note that the implementation is free to return the images in any order, so we must use the acquire function and can't just cycle through the images/imageIndex on our own
 		uint32_t imageIndex;
@@ -998,6 +1068,9 @@ public:
 		else if ((result != VK_SUCCESS) && (result != VK_SUBOPTIMAL_KHR)) {
 			throw "Could not acquire the next swap chain image!";
 		}
+#else
+        uint32_t imageIndex = currentFrame;
+#endif
 #ifdef CONVERT_TO_MESH_PIPELINES
         fMeshPipeline->updateUniformBuffer(fRenderCommandSettings);
 #else
@@ -1096,13 +1169,14 @@ public:
 		submitInfo.pWaitDstStageMask = &waitStageMask;      // Pointer to the list of pipeline stages that the semaphore waits will occur at
 		submitInfo.pCommandBuffers = &commandBuffer;		// Command buffers(s) to execute in this batch (submission)
 		submitInfo.commandBufferCount = 1;                  // We submit a single command buffer
-
+#if 0
 		// Semaphore to wait upon before the submitted command buffer starts executing
 		submitInfo.pWaitSemaphores = &presentCompleteSemaphores[currentFrame];
 		submitInfo.waitSemaphoreCount = 1;
 		// Semaphore to be signaled when command buffers have completed
 		submitInfo.pSignalSemaphores = &renderCompleteSemaphores[imageIndex];
 		submitInfo.signalSemaphoreCount = 1;
+#endif
 
 		// Submit to the graphics queue passing a wait fence
 		VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, waitFences[currentFrame]));
@@ -1111,6 +1185,7 @@ public:
 		// Pass the semaphore signaled by the command buffer submission from the submit info as the wait semaphore for swap chain presentation
 		// This ensures that the image is not presented to the windowing system until all commands have been submitted
 
+#ifndef INTERVOX
 		VkPresentInfoKHR presentInfo{};
 		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		presentInfo.waitSemaphoreCount = 1;
@@ -1126,10 +1201,331 @@ public:
 		else if (result != VK_SUCCESS) {
 			throw "Could not present the image to the swap chain!";
 		}
+#endif
+        grabImage();
 
 		// Select the next frame to render to, based on the max. no. of concurrent frames
 		currentFrame = (currentFrame + 1) % MAX_CONCURRENT_FRAMES;
 	}
+    
+    void grabImage()
+    {
+        bool supportsBlit = true;
+
+        // Check blit support for source and destination
+        VkFormatProperties formatProps;
+
+        // Check if the device supports blitting from optimal images (the swapchain images are in optimal format)
+        vkGetPhysicalDeviceFormatProperties(physicalDevice, getColorFormat(), &formatProps);
+        if (!(formatProps.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT))
+        {
+            //       std::cerr << "Device does not support blitting from optimal tiled images, using copy instead of blit!" << std::endl;
+            supportsBlit = false;
+        }
+
+        // Check if the device supports blitting to linear images
+        vkGetPhysicalDeviceFormatProperties(physicalDevice, VK_FORMAT_R8G8B8A8_UNORM, &formatProps);
+        if (!(formatProps.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT))
+        {
+            //        std::cerr << "Device does not support blitting to linear tiled images, using copy instead of blit!" << std::endl;
+            supportsBlit = false;
+        }
+
+        // Source for the copy is the last rendered swapchain image
+        VkImage srcImage = getImageAtIndex(currentBuffer);
+
+        // Create the linear tiled destination image to copy to and to read the memory from
+        VkImageCreateInfo imageCreateCI(vks::initializers::imageCreateInfo());
+        imageCreateCI.imageType = VK_IMAGE_TYPE_2D;
+        // Note that vkCmdBlitImage (if supported) will also do format conversions if the swapchain color format would differ
+        imageCreateCI.format = VK_FORMAT_R8G8B8A8_UNORM;
+        imageCreateCI.extent.width = width;
+        imageCreateCI.extent.height = height;
+        imageCreateCI.extent.depth = 1;
+        imageCreateCI.arrayLayers = 1;
+        imageCreateCI.mipLevels = 1;
+        imageCreateCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageCreateCI.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageCreateCI.tiling = VK_IMAGE_TILING_LINEAR;
+        imageCreateCI.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        // Create the image
+        VkImage dstImage;
+        VK_CHECK_RESULT(vkCreateImage(device, &imageCreateCI, nullptr, &dstImage));
+        // Create memory to back up the image
+        VkMemoryRequirements memRequirements;
+        VkMemoryAllocateInfo memAllocInfo(vks::initializers::memoryAllocateInfo());
+        VkDeviceMemory dstImageMemory;
+        vkGetImageMemoryRequirements(device, dstImage, &memRequirements);
+        memAllocInfo.allocationSize = memRequirements.size;
+        // Memory must be host visible to copy from
+        memAllocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &dstImageMemory));
+        VK_CHECK_RESULT(vkBindImageMemory(device, dstImage, dstImageMemory, 0));
+
+        // Do the actual blit from the swapchain image to our host visible destination image
+        VkCommandBuffer copyCmd = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+        // Transition destination image to transfer destination layout
+        vks::tools::insertImageMemoryBarrier(
+            copyCmd,
+            dstImage,
+            0,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
+
+        // Transition swapchain image from present to transfer source layout
+        vks::tools::insertImageMemoryBarrier(
+            copyCmd,
+            srcImage,
+            VK_ACCESS_MEMORY_READ_BIT,
+            VK_ACCESS_TRANSFER_READ_BIT,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
+
+        // If source and destination support blit we'll blit as this also does automatic format conversion (e.g. from BGR to RGB)
+        if (supportsBlit)
+        {
+            // Define the region to blit (we will blit the whole swapchain image)
+            VkOffset3D blitSize;
+            blitSize.x = width;
+            blitSize.y = height;
+            blitSize.z = 1;
+            VkImageBlit imageBlitRegion{};
+            imageBlitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            imageBlitRegion.srcSubresource.layerCount = 1;
+            imageBlitRegion.srcOffsets[1] = blitSize;
+            imageBlitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            imageBlitRegion.dstSubresource.layerCount = 1;
+            imageBlitRegion.dstOffsets[1] = blitSize;
+
+            // Issue the blit command
+            vkCmdBlitImage(
+                copyCmd,
+                srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                1,
+                &imageBlitRegion,
+                VK_FILTER_NEAREST);
+        }
+        else
+        {
+            // Otherwise use image copy (requires us to manually flip components)
+            VkImageCopy imageCopyRegion{};
+            imageCopyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            imageCopyRegion.srcSubresource.layerCount = 1;
+            imageCopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            imageCopyRegion.dstSubresource.layerCount = 1;
+            imageCopyRegion.extent.width = width;
+            imageCopyRegion.extent.height = height;
+            imageCopyRegion.extent.depth = 1;
+
+            // Issue the copy command
+            vkCmdCopyImage(
+                copyCmd,
+                srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                1,
+                &imageCopyRegion);
+        }
+
+        // Transition destination image to general layout, which is the required layout for mapping the image memory later on
+        vks::tools::insertImageMemoryBarrier(
+            copyCmd,
+            dstImage,
+            VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_MEMORY_READ_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_GENERAL,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
+
+        // Transition back the swap chain image after the blit is done
+        vks::tools::insertImageMemoryBarrier(
+            copyCmd,
+            srcImage,
+            VK_ACCESS_TRANSFER_READ_BIT,
+            VK_ACCESS_MEMORY_READ_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1});
+
+        vulkanDevice->flushCommandBuffer(copyCmd, queue);
+
+        // Get layout of the image (including row pitch)
+        VkImageSubresource subResource{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0};
+        VkSubresourceLayout subResourceLayout;
+        vkGetImageSubresourceLayout(device, dstImage, &subResource, &subResourceLayout);
+
+        // Map image memory so we can start copying from it
+        const char *data;
+        vkMapMemory(device, dstImageMemory, 0, VK_WHOLE_SIZE, 0, (void **)&data);
+        data += subResourceLayout.offset;
+
+        // If source is BGR (destination is always RGB) and we can't use blit (which does automatic conversion), we'll have to manually swizzle color components
+        bool colorSwizzle = false;
+        // Check if source is BGR
+        // Note: Not complete, only contains most common and basic BGR surface formats for demonstration purposes
+        if (!supportsBlit)
+        {
+            std::vector<VkFormat> formatsBGR = {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_SNORM};
+            colorSwizzle = (std::find(formatsBGR.begin(), formatsBGR.end(), getColorFormat()) != formatsBGR.end());
+        }
+
+    #if 1 // debugging code
+        std::ofstream file("saved_intevox.ppm", std::ios::out | std::ios::binary);
+
+        // ppm header
+        file << "P6\n" << width << "\n" << height << "\n" << 255 << "\n";
+
+        // ppm binary pixel data
+        const char* debug_data = data;
+        for (uint32_t y = 0; y < height; y++)
+        {
+            unsigned int *row = (unsigned int*)debug_data;
+            for (uint32_t x = 0; x < width; x++)
+            {
+                if (colorSwizzle)
+                {
+                    file.write((char*)row+2, 1);
+                    file.write((char*)row+1, 1);
+                    file.write((char*)row, 1);
+                }
+                else
+                {
+                    file.write((char*)row, 3);
+                }
+                row++;
+            }
+            debug_data += subResourceLayout.rowPitch;
+        }
+        file.close();
+
+        std::cout << "Screenshot saved to disk" << std::endl;
+    #endif
+#if 0
+        for (uint32_t y = 0; y < height; y++)
+        {
+            const uint8_t *row = reinterpret_cast<const uint8_t *>(data);
+            uint8_t *toRow = fImageData.data() + y * width * 4;
+            for (uint32_t x = 0; x < width; x++)
+            {
+                // reverse order for correct rendering in java
+                if (!colorSwizzle)
+                {
+                    toRow[0] = row[2];
+                    toRow[1] = row[1];
+                    toRow[2] = row[0];
+                    toRow[3] = 0xFF;
+                }
+                else
+                {
+                    toRow[0] = row[0];
+                    toRow[1] = row[0];
+                    toRow[2] = row[0];
+                    toRow[3] = 0xFF;
+                }
+                row += 4;
+                toRow += 4;
+            }
+            data += subResourceLayout.rowPitch;
+        }
+#endif
+        // Clean up resources
+        vkUnmapMemory(device, dstImageMemory);
+        vkFreeMemory(device, dstImageMemory, nullptr);
+        vkDestroyImage(device, dstImage, nullptr);
+    }
+
+
+// Intervox addition
+uint32_t getImageCount()
+{
+#ifdef INTERVOX
+    return imageCount;
+#else
+    return (uint32_t)swapChain.images.size();
+#endif
+}
+
+
+// Intervox addition
+VkFormat getColorFormat()
+{
+#ifndef INTERVOX
+    return swapChain.colorFormat;
+#else
+    return colorFormat;
+#endif
+}
+        
+// Intervox addition
+    VkImage getImageAtIndex(size_t index) {
+#ifndef INTERVOX
+        return swapChain.images[currentFrame];
+#else
+    return colorAttachments[index].image;
+#endif
+}
+        
+#ifdef INTERVOX
+void setupImageViews()
+{
+    VkFormat depthFormat;
+    vks::tools::getSupportedDepthFormat(physicalDevice, &depthFormat);
+
+    for (uint32_t i = 0; i < getImageCount(); ++i)
+    {
+        FrameBufferAttachment colorAttachment{};
+        VkImageCreateInfo image = vks::initializers::imageCreateInfo();
+        image.imageType = VK_IMAGE_TYPE_2D;
+        image.format = colorFormat;
+        image.extent.width = width;
+        image.extent.height = height;
+        image.extent.depth = 1;
+        image.mipLevels = 1;
+        image.arrayLayers = 1;
+        image.samples = VK_SAMPLE_COUNT_1_BIT;
+        image.tiling = VK_IMAGE_TILING_OPTIMAL;
+        image.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+
+        VkMemoryAllocateInfo memAlloc = vks::initializers::memoryAllocateInfo();
+        VkMemoryRequirements memReqs;
+
+        VK_CHECK_RESULT(vkCreateImage(device, &image, nullptr, &colorAttachment.image));
+        vkGetImageMemoryRequirements(device, colorAttachment.image, &memReqs);
+        memAlloc.allocationSize = memReqs.size;
+        memAlloc.memoryTypeIndex = getMemoryTypeIndex(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        VK_CHECK_RESULT(vkAllocateMemory(device, &memAlloc, nullptr, &colorAttachment.memory));
+        VK_CHECK_RESULT(vkBindImageMemory(device, colorAttachment.image, colorAttachment.memory, 0));
+
+        VkImageViewCreateInfo colorImageView = vks::initializers::imageViewCreateInfo();
+        colorImageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        colorImageView.format = colorFormat;
+        colorImageView.subresourceRange = {};
+        colorImageView.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        colorImageView.subresourceRange.baseMipLevel = 0;
+        colorImageView.subresourceRange.levelCount = 1;
+        colorImageView.subresourceRange.baseArrayLayer = 0;
+        colorImageView.subresourceRange.layerCount = 1;
+        colorImageView.image = colorAttachment.image;
+        VK_CHECK_RESULT(vkCreateImageView(device, &colorImageView, nullptr, &colorAttachment.view));
+
+        colorAttachments.push_back(colorAttachment);
+    }
+}
+
+#endif
+
 };
 
 // OS specific main entry points
@@ -1269,3 +1665,4 @@ int main(const int argc, const char *argv[])
 #elif defined(VK_USE_PLATFORM_SCREEN_QNX)
 VULKAN_EXAMPLE_MAIN()
 #endif
+

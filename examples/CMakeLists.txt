@@ -126,6 +126,7 @@ set(EXAMPLES
 	inputattachments
 	instancing
         intervoxtest
+        intervoxtest2
 	meshshader
 	multisampling
 	multithreading

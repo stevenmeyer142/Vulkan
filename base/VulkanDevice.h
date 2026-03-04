@@ -67,7 +67,24 @@ struct VulkanDevice
 	VkFormat        getSupportedDepthFormat(bool checkSamplingSupport);
 
 #ifdef INTERVOX
-    VkDeviceSize getAlignedMemory(VkDeviceSize size); 
+    VkDeviceSize getAlignedMemory(VkDeviceSize size)
+    {
+        VkDeviceSize alignmentSize = properties.limits.nonCoherentAtomSize;
+
+        if (alignmentSize == 0)
+        {
+            return size;
+        }
+
+        auto multiple = size / alignmentSize;
+
+        if ((size % alignmentSize) != 0)
+        {
+            multiple++;
+        }
+
+        return multiple * alignmentSize;
+    }
 #endif // INTERVOX_LIB
 };
 }        // namespace vks
