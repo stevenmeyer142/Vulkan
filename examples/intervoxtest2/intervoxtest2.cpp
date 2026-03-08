@@ -53,6 +53,12 @@
 #include "base/VulkanDevice.h"
 #endif
 
+#define USE_VULKAN_DEBUG 1
+
+#if USE_VULKAN_DEBUG
+#include "VulkanDebug.h"
+#define DEBUG  1
+#else
 void setupDebugging(VkInstance instance, VkDebugReportFlagsEXT flags, VkDebugReportCallbackEXT callBack);
 PFN_vkCreateDebugUtilsMessengerEXT gCreateDebugUtilsMessengerEXT;
 PFN_vkDestroyDebugUtilsMessengerEXT gDestroyDebugUtilsMessengerEXT;
@@ -62,7 +68,7 @@ VkDebugUtilsMessengerEXT debugUtilsMessenger;
 android_app* androidapp;
 #endif
 
-#define DEBUG (!NDEBUG)
+
 
 #define BUFFER_ELEMENTS 32
 
@@ -85,6 +91,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugMessageCallback(
 	LOG("[VALIDATION]: %s - %s\n", pLayerPrefix, pMessage);
 	return VK_FALSE;
 }
+#endif
 
 CommandLineParser commandLineParser;
 
@@ -94,7 +101,7 @@ public:
 	VkInstance instance;
 	VkPhysicalDevice physicalDevice;
 #if USE_VULKAN_DEVICE
-    vks::VulkanDevice *fVulkanDevice;
+    vks::VulkanDevice *fVulkanDevice = nullptr;
     VkPhysicalDeviceFeatures enabledFeatures{};
 #else
 	VkDevice device;
@@ -107,7 +114,7 @@ public:
 	VkCommandPool commandPool;
 #endif
     
-	VkCommandBuffer commandBuffer;
+	VkCommandBuffer commandBuffe;
 #if !USE_MY_PIPELINE
 	VkDescriptorSetLayout descriptorSetLayout;
 	VkPipelineLayout pipelineLayout;
@@ -131,7 +138,11 @@ public:
 	FrameBufferAttachment colorAttachment, depthAttachment;
 	VkRenderPass renderPass;
 
+#if USE_VULKAN_DEBUG
+    VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI{};
+#else
 	VkDebugReportCallbackEXT debugReportCallback{};
+#endif
 
 	std::string shaderDir = "glsl";
 
@@ -254,6 +265,7 @@ public:
     }
 #endif
 
+#if !USE_VULKAN_DEBUG
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
             VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
             VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -302,10 +314,11 @@ public:
             // If you instead want to have calls abort, pass in VK_TRUE and the function will return VK_ERROR_VALIDATION_FAILED_EXT
             return VK_FALSE;
         }
-
+#endif
+    
 	VulkanExample()
 	{
-		LOG("Running headless rendering example\n");
+		vks::debug::log("Running headless rendering example\n");
 
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
 		LOG("loading vulkan lib");
@@ -364,6 +377,15 @@ public:
 			instanceCreateInfo.ppEnabledLayerNames = validationLayers;
 			instanceCreateInfo.enabledLayerCount = layerCount;
 		}
+        
+#if USE_VULKAN_DEBUG
+        vks::debug::setupDebugingMessengerCreateInfo(debugUtilsMessengerCI);
+        debugUtilsMessengerCI.pNext = instanceCreateInfo.pNext;
+        instanceCreateInfo.pNext = &debugUtilsMessengerCI;
+        
+        instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+#endif
 #endif
 #if (defined(VK_USE_PLATFORM_MACOS_MVK) || defined(VK_USE_PLATFORM_METAL_EXT))
 		// SRS - When running on macOS with MoltenVK, enable VK_KHR_get_physical_device_properties2 (required by VK_KHR_portability_subset)
@@ -402,7 +424,7 @@ public:
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
 		vks::android::loadVulkanFunctions(instance);
 #endif
-#if DEBUG
+#if DEBUG && !USE_VULKAN_DEBUG
 		if (layersAvailable) {
 			VkDebugReportCallbackCreateInfoEXT debugReportCreateInfo = {};
 			debugReportCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
@@ -886,11 +908,11 @@ public:
  
         createDescriptorPool();
         meshPipeline->createDescriptorSetLayout();
-        meshPipeline->setupDescripterSets(descriptorPool);
-        meshPipeline->setupPipeline(getShadersPath(), renderPass, pipelineCache);
-        std::shared_ptr<VulkanMesh> mesh = std::make_shared<VulkanMesh>(fVulkanDevice);
+         std::shared_ptr<VulkanMesh> mesh = std::make_shared<VulkanMesh>(fVulkanDevice);
         mesh->CreateDebugMesh(queue);
         meshPipeline->addMesh(mesh);
+        meshPipeline->setupDescripterSets(descriptorPool);
+        meshPipeline->setupPipeline(getShadersPath(), renderPass, pipelineCache);
         meshPipeline->updateUniformBuffer(fRenderCommandSettings);
 #endif
 		/*
@@ -960,6 +982,7 @@ public:
             submitWork(commandBuffer, queue);
 #else
             meshPipeline->Draw(commandBuffer, fRenderCommandSettings);
+            vkCmdEndRenderPass(commandBuffer);
             
             fVulkanDevice->flushCommandBuffer(commandBuffer, queue);
 #endif
@@ -1100,8 +1123,8 @@ public:
 				imagedata += subResourceLayout.rowPitch;
 			}
 			file.close();
-
-			LOG("Framebuffer image saved to %s\n", filename);
+            
+            vks::debug::log(std::string("Framebuffer image saved to ") + filename);
 
 			// Clean up resources
 			vkUnmapMemory(getDevice(), dstImageMemory);
@@ -1134,6 +1157,7 @@ public:
 		vkDestroyPipeline(device, pipeline, nullptr);
 #else
         vkDestroyDescriptorPool(getDevice(), descriptorPool, nullptr);
+        meshPipeline = nullptr;
 #endif
 		vkDestroyPipelineCache(getDevice(), pipelineCache, nullptr);
 #if !USE_VULKAN_DEVICE
@@ -1144,13 +1168,24 @@ public:
 			vkDestroyShaderModule(device, shadermodule, nullptr);
 		}
 #endif
+#if USE_VULKAN_DEVICE
+        if (fVulkanDevice != nullptr){
+            delete fVulkanDevice;
+            fVulkanDevice = nullptr;
+        }
+#else
 		vkDestroyDevice(getDevice(), nullptr);
+#endif
 #if DEBUG
+#if USE_VULKAN_DEBUG
+        vks::debug::freeDebugCallback(instance);
+#else
 		if (debugReportCallback) {
 			PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallback = reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>(vkGetInstanceProcAddr(instance, "vkDestroyDebugReportCallbackEXT"));
 			assert(vkDestroyDebugReportCallback);
 			vkDestroyDebugReportCallback(instance, debugReportCallback, nullptr);
 		}
+#endif
 #endif
 		vkDestroyInstance(instance, nullptr);
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)

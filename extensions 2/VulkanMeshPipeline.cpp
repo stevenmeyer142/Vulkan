@@ -170,7 +170,13 @@ void VulkanMeshPipeline::setupPipeline(const std::string &shadersPath, VkRenderP
 
 void VulkanMeshPipeline::createDescriptorSetLayout()
 {
+#if 0
+    std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {};
+    VkDescriptorSetLayoutCreateInfo descriptorLayout =
+        vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);
+    VK_CHECK_RESULT(vkCreateDescriptorSetLayout(fDevice, &descriptorLayout, nullptr, &fDescriptorSetLayout));
 
+#else
     std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings =
         {
             // Binding 0 : Vertex shader uniform buffer
@@ -185,6 +191,7 @@ void VulkanMeshPipeline::createDescriptorSetLayout()
             static_cast<uint32_t>(setLayoutBindings.size()));
 
     VK_CHECK_RESULT(vkCreateDescriptorSetLayout(fDevice, &descriptorLayout, nullptr, &fDescriptorSetLayout));
+#endif
 }
 
 void VulkanMeshPipeline::setupVertexDescriptions()
