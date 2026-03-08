@@ -58,39 +58,6 @@
 #if USE_VULKAN_DEBUG
 #include "VulkanDebug.h"
 #define DEBUG  1
-#else
-void setupDebugging(VkInstance instance, VkDebugReportFlagsEXT flags, VkDebugReportCallbackEXT callBack);
-PFN_vkCreateDebugUtilsMessengerEXT gCreateDebugUtilsMessengerEXT;
-PFN_vkDestroyDebugUtilsMessengerEXT gDestroyDebugUtilsMessengerEXT;
-VkDebugUtilsMessengerEXT debugUtilsMessenger;
-
-#if defined(VK_USE_PLATFORM_ANDROID_KHR)
-android_app* androidapp;
-#endif
-
-
-
-#define BUFFER_ELEMENTS 32
-
-#if defined(VK_USE_PLATFORM_ANDROID_KHR)
-#define LOG(...) ((void)__android_log_print(ANDROID_LOG_INFO, "vulkanExample", __VA_ARGS__))
-#else
-#define LOG(...) printf(__VA_ARGS__)
-#endif
-
-static VKAPI_ATTR VkBool32 VKAPI_CALL debugMessageCallback(
-	VkDebugReportFlagsEXT flags,
-	VkDebugReportObjectTypeEXT objectType,
-	uint64_t object,
-	size_t location,
-	int32_t messageCode,
-	const char* pLayerPrefix,
-	const char* pMessage,
-	void* pUserData)
-{
-	LOG("[VALIDATION]: %s - %s\n", pLayerPrefix, pMessage);
-	return VK_FALSE;
-}
 #endif
 
 CommandLineParser commandLineParser;
@@ -103,30 +70,14 @@ public:
 #if USE_VULKAN_DEVICE
     vks::VulkanDevice *fVulkanDevice = nullptr;
     VkPhysicalDeviceFeatures enabledFeatures{};
-#else
-	VkDevice device;
-	uint32_t queueFamilyIndex;
 #endif
 	VkPipelineCache pipelineCache;
 	VkQueue queue;
-    
-#if! USE_VULKAN_DEVICE
-	VkCommandPool commandPool;
-#endif
-    
+        
 	VkCommandBuffer commandBuffe;
-#if !USE_MY_PIPELINE
-	VkDescriptorSetLayout descriptorSetLayout;
-	VkPipelineLayout pipelineLayout;
-	VkPipeline pipeline;
-	std::vector<VkShaderModule> shaderModules;
-	VkBuffer vertexBuffer, indexBuffer;
-	VkDeviceMemory vertexMemory, indexMemory;
-#else
     VkDescriptorPool descriptorPool;
     std::shared_ptr<VulkanMeshPipeline> meshPipeline;
     RenderCommandSettings fRenderCommandSettings;
-#endif
     
 	struct FrameBufferAttachment {
 		VkImage image;
@@ -138,11 +89,7 @@ public:
 	FrameBufferAttachment colorAttachment, depthAttachment;
 	VkRenderPass renderPass;
 
-#if USE_VULKAN_DEBUG
     VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI{};
-#else
-	VkDebugReportCallbackEXT debugReportCallback{};
-#endif
 
 	std::string shaderDir = "glsl";
 
@@ -161,51 +108,17 @@ public:
 	}
     
     VkDevice getDevice() {
-#if USE_VULKAN_DEVICE
         return fVulkanDevice->logicalDevice;
-#else
-        return device;
-#endif
     }
     
     VkCommandPool getCommandPool() {
-#if USE_VULKAN_DEVICE
-        return fVulkanDevice->commandPool;
-#else
-        return commandPool;
-#endif
 
+        return fVulkanDevice->commandPool;
     }
 
 	VkResult createBuffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, VkBuffer *buffer, VkDeviceMemory *memory, VkDeviceSize size, void *data = nullptr)
 	{
-#if USE_VULKAN_DEVICE
         return fVulkanDevice->createBuffer(usageFlags, memoryPropertyFlags, size, buffer, memory, data);
-#else
-		// Create the buffer handle
-		VkBufferCreateInfo bufferCreateInfo = vks::initializers::bufferCreateInfo(usageFlags, size);
-		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		VK_CHECK_RESULT(vkCreateBuffer(device, &bufferCreateInfo, nullptr, buffer));
-
-		// Create the memory backing up the buffer handle
-		VkMemoryRequirements memReqs;
-		VkMemoryAllocateInfo memAlloc = vks::initializers::memoryAllocateInfo();
-		vkGetBufferMemoryRequirements(device, *buffer, &memReqs);
-		memAlloc.allocationSize = memReqs.size;
-		memAlloc.memoryTypeIndex = getMemoryTypeIndex(memReqs.memoryTypeBits, memoryPropertyFlags);
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAlloc, nullptr, memory));
-
-		if (data != nullptr) {
-			void *mapped;
-			VK_CHECK_RESULT(vkMapMemory(device, *memory, 0, size, 0, &mapped));
-			memcpy(mapped, data, size);
-			vkUnmapMemory(device, *memory);
-		}
-
-		VK_CHECK_RESULT(vkBindBufferMemory(device, *buffer, *memory, 0));
-
-		return VK_SUCCESS;
-#endif
 	}
 
 	/*
@@ -227,7 +140,7 @@ public:
         vkDestroyFence(getDevice(), fence, nullptr);
 	}
     
-#if USE_MY_PIPELINE
+
     std::string getShadersPath(){
         return getShaderBasePath() + shaderDir + "/intervoxtest2/";
     }
@@ -257,65 +170,11 @@ public:
         // Set the max. number of descriptor sets that can be requested from this pool (requesting beyond this limit will result in an error)
         // Our sample will create one set per uniform buffer per frame
         descriptorPoolCI.maxSets = std::max(meshPipeline->getUniformBufferCount(), 1u);
-#if USE_VULKAN_DEVICE
+
         VK_CHECK_RESULT(vkCreateDescriptorPool(fVulkanDevice->logicalDevice, &descriptorPoolCI, nullptr, &descriptorPool));
-#else
-        VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolCI, nullptr, &descriptorPool));
-#endif
     }
-#endif
 
-#if !USE_VULKAN_DEBUG
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
-            VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-            VkDebugUtilsMessageTypeFlagsEXT messageType,
-            const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-            void* pUserData)
-        {
-            // Select prefix depending on flags passed to the callback
-            std::string prefix("");
-
-            if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
-                prefix = "VERBOSE: ";
-            }
-            else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
-                prefix = "INFO: ";
-            }
-            else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-                prefix = "WARNING: ";
-            }
-            else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-                prefix = "ERROR: ";
-            }
-
-
-            // Display message to default output (console/logcat)
-            std::stringstream debugMessage;
-            debugMessage << prefix << "[" << pCallbackData->messageIdNumber << "][" << pCallbackData->pMessageIdName << "] : " << pCallbackData->pMessage;
-
-    #if defined(__ANDROID__)
-            if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-                LOGE("%s", debugMessage.str().c_str());
-            } else {
-                LOGD("%s", debugMessage.str().c_str());
-            }
-    #else
-            if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-                std::cerr << debugMessage.str() << "\n";
-            } else {
-                std::cout << debugMessage.str() << "\n";
-            }
-            fflush(stdout);
-    #endif
-
-
-            // The return value of this callback controls whether the Vulkan call that caused the validation message will be aborted or not
-            // We return VK_FALSE as we DON'T want Vulkan calls that cause a validation message to abort
-            // If you instead want to have calls abort, pass in VK_TRUE and the function will return VK_ERROR_VALIDATION_FAILED_EXT
-            return VK_FALSE;
-        }
-#endif
-    
+   
 	VulkanExample()
 	{
 		vks::debug::log("Running headless rendering example\n");
@@ -378,14 +237,11 @@ public:
 			instanceCreateInfo.enabledLayerCount = layerCount;
 		}
         
-#if USE_VULKAN_DEBUG
         vks::debug::setupDebugingMessengerCreateInfo(debugUtilsMessengerCI);
         debugUtilsMessengerCI.pNext = instanceCreateInfo.pNext;
         instanceCreateInfo.pNext = &debugUtilsMessengerCI;
         
         instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-
-#endif
 #endif
 #if (defined(VK_USE_PLATFORM_MACOS_MVK) || defined(VK_USE_PLATFORM_METAL_EXT))
 		// SRS - When running on macOS with MoltenVK, enable VK_KHR_get_physical_device_properties2 (required by VK_KHR_portability_subset)
@@ -424,21 +280,6 @@ public:
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
 		vks::android::loadVulkanFunctions(instance);
 #endif
-#if DEBUG && !USE_VULKAN_DEBUG
-		if (layersAvailable) {
-			VkDebugReportCallbackCreateInfoEXT debugReportCreateInfo = {};
-			debugReportCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-			debugReportCreateInfo.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
-			debugReportCreateInfo.pfnCallback = (PFN_vkDebugReportCallbackEXT)debugUtilsMessengerCallback;
-
-			// We have to explicitly load this function.
-			PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(vkGetInstanceProcAddr(instance, "vkCreateDebugReportCallbackEXT"));
-			assert(vkCreateDebugReportCallbackEXT);
-			VK_CHECK_RESULT(vkCreateDebugReportCallbackEXT(instance, &debugReportCreateInfo, nullptr, &debugReportCallback));
-            std::cout << "adding debug reporter " << std::endl;
-		}
-#endif
-
 		/*
 			Vulkan device creation
 		*/
@@ -447,7 +288,7 @@ public:
 		std::vector<VkPhysicalDevice> physicalDevices(deviceCount);
 		VK_CHECK_RESULT(vkEnumeratePhysicalDevices(instance, &deviceCount, physicalDevices.data()));
 		physicalDevice = physicalDevices[0];
-#if USE_VULKAN_DEVICE
+
         fVulkanDevice = new vks::VulkanDevice(physicalDevice);
         
         std::vector<const char*> deviceExtensions = {};
@@ -480,166 +321,8 @@ public:
 #endif
         fVulkanDevice->createLogicalDevice(enabledFeatures, deviceExtensions, nullptr, false, VK_QUEUE_GRAPHICS_BIT);
         vkGetDeviceQueue(getDevice(), fVulkanDevice->getQueueFamilyIndex(VK_QUEUE_GRAPHICS_BIT), 0, &queue);
-#else
-		VkPhysicalDeviceProperties deviceProperties;
-		vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
-		LOG("GPU: %s\n", deviceProperties.deviceName);
+       
 
-		// Request a single graphics queue
-		const float defaultQueuePriority(0.0f);
-		VkDeviceQueueCreateInfo queueCreateInfo = {};
-		uint32_t queueFamilyCount;
-		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
-		std::vector<VkQueueFamilyProperties> queueFamilyProperties(queueFamilyCount);
-		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilyProperties.data());
-		for (uint32_t i = 0; i < static_cast<uint32_t>(queueFamilyProperties.size()); i++) {
-			if (queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-				queueFamilyIndex = i;
-				queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-				queueCreateInfo.queueFamilyIndex = i;
-				queueCreateInfo.queueCount = 1;
-				queueCreateInfo.pQueuePriorities = &defaultQueuePriority;
-				break;
-			}
-		}
-		// Create logical device
-		VkDeviceCreateInfo deviceCreateInfo = {};
-		deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-		deviceCreateInfo.queueCreateInfoCount = 1;
-		deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
-		std::vector<const char*> deviceExtensions = {};
-        std::cout << "queueFamilyIndex " << queueFamilyIndex << std::endl;
-		// Shaders generated by Slang require a certain SPIR-V environment that can't be satisfied by Vulkan 1.0, so we need to expliclity up that to at least 1.1 and enable some required extensions
-		if (shaderDir == "slang") {
-			deviceExtensions.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME);
-			deviceExtensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME);
-		}
-
-#if (defined(VK_USE_PLATFORM_MACOS_MVK) || defined(VK_USE_PLATFORM_METAL_EXT)) && defined(VK_KHR_portability_subset)
-		// When running on macOS with MoltenVK and VK_KHR_portability_subset is defined and supported by the device, enable the extension
-		uint32_t deviceExtCount = 0;
-		vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &deviceExtCount, nullptr);
-		if (deviceExtCount > 0)
-		{
-			std::vector<VkExtensionProperties> extensions(deviceExtCount);
-			if (vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &deviceExtCount, &extensions.front()) == VK_SUCCESS)
-			{
-				for (VkExtensionProperties extension : extensions)
-				{
-					if (strcmp(extension.extensionName, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME) == 0)
-					{
-						deviceExtensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
-						break;
-					}
-				}
-			}
-		}
-#endif
-        std::cout << "device extensions" << std::endl;
-        for (auto extension : deviceExtensions){
-            std::cout << extension << std::endl;
-        }
-		deviceCreateInfo.enabledExtensionCount = (uint32_t)deviceExtensions.size();
-		deviceCreateInfo.ppEnabledExtensionNames = deviceExtensions.data();
-		VK_CHECK_RESULT(vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device));
-        std::cout << "vkCreateDevice" << std::endl;
-		// Get a graphics queue
-		vkGetDeviceQueue(device, queueFamilyIndex, 0, &queue);
-
-		// Command pool
-		VkCommandPoolCreateInfo cmdPoolInfo = {};
-		cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-		cmdPoolInfo.queueFamilyIndex = queueFamilyIndex;
-		cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-		VK_CHECK_RESULT(vkCreateCommandPool(device, &cmdPoolInfo, nullptr, &commandPool));
-        std::cout << "vkCreateCommandPool" << std::endl;
-#endif
-        
-		/*
-			Prepare vertex and index buffers
-		*/
-#ifndef USE_MY_PIPELINE
-		struct Vertex {
-			float position[3];
-			float color[3];
-		};
-		{
-			std::vector<Vertex> vertices = {
-				{ {  1.0f,  1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f } },
-				{ { -1.0f,  1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f } },
-				{ {  0.0f, -1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f } }
-			};
-			std::vector<uint32_t> indices = { 0, 1, 2 };
-
-			const VkDeviceSize vertexBufferSize = vertices.size() * sizeof(Vertex);
-			const VkDeviceSize indexBufferSize = indices.size() * sizeof(uint32_t);
-
-			VkBuffer stagingBuffer;
-			VkDeviceMemory stagingMemory;
-            std::cout << "Copy input data to VRAM using a staging buffer" << std::endl;
-			// Command buffer for copy commands (reused)
-			VkCommandBufferAllocateInfo cmdBufAllocateInfo = vks::initializers::commandBufferAllocateInfo(commandPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1);
-			VkCommandBuffer copyCmd;
-			VK_CHECK_RESULT(vkAllocateCommandBuffers(device, &cmdBufAllocateInfo, &copyCmd));
-			VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
-
-			// Copy input data to VRAM using a staging buffer
-			{
-				// Vertices
-				createBuffer(
-					VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-					VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-					&stagingBuffer,
-					&stagingMemory,
-					vertexBufferSize,
-					vertices.data());
-
-				createBuffer(
-					VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-					VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-					&vertexBuffer,
-					&vertexMemory,
-					vertexBufferSize);
-
-				VK_CHECK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo));
-				VkBufferCopy copyRegion = {};
-				copyRegion.size = vertexBufferSize;
-				vkCmdCopyBuffer(copyCmd, stagingBuffer, vertexBuffer, 1, &copyRegion);
-				VK_CHECK_RESULT(vkEndCommandBuffer(copyCmd));
-
-				submitWork(copyCmd, queue);
-
-				vkDestroyBuffer(device, stagingBuffer, nullptr);
-				vkFreeMemory(device, stagingMemory, nullptr);
-
-				// Indices
-				createBuffer(
-					VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-					VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-					&stagingBuffer,
-					&stagingMemory,
-					indexBufferSize,
-					indices.data());
-
-				createBuffer(
-					VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-					VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-					&indexBuffer,
-					&indexMemory,
-					indexBufferSize);
-
-				VK_CHECK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo));
-				copyRegion.size = indexBufferSize;
-				vkCmdCopyBuffer(copyCmd, stagingBuffer, indexBuffer, 1, &copyRegion);
-				VK_CHECK_RESULT(vkEndCommandBuffer(copyCmd));
-
-				submitWork(copyCmd, queue);
-
-				vkDestroyBuffer(device, stagingBuffer, nullptr);
-				vkFreeMemory(device, stagingMemory, nullptr);
-			}
-		}
-#endif
         std::cout << "Create framebuffer attachments " << std::endl;
 		/*
 			Create framebuffer attachments
@@ -789,116 +472,6 @@ public:
 			VK_CHECK_RESULT(vkCreateFramebuffer(getDevice(), &framebufferCreateInfo, nullptr, &framebuffer));
 		}
 
-		/*
-			Prepare graphics pipeline
-		*/
-#if !USE_MY_PIPELINE
-		{
-			std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {};
-			VkDescriptorSetLayoutCreateInfo descriptorLayout =
-				vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);
-			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorLayout, nullptr, &descriptorSetLayout));
-
-			VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo =
-				vks::initializers::pipelineLayoutCreateInfo(nullptr, 0);
-
-			// MVP via push constant block
-			VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), 0);
-			pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-			pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
-
-			VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
-
-			VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {};
-			pipelineCacheCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-			VK_CHECK_RESULT(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
-
-			// Create pipeline
-			VkPipelineInputAssemblyStateCreateInfo inputAssemblyState =
-				vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
-
-			VkPipelineRasterizationStateCreateInfo rasterizationState =
-				vks::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
-
-			VkPipelineColorBlendAttachmentState blendAttachmentState =
-				vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
-
-			VkPipelineColorBlendStateCreateInfo colorBlendState =
-				vks::initializers::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
-
-			VkPipelineDepthStencilStateCreateInfo depthStencilState =
-				vks::initializers::pipelineDepthStencilStateCreateInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-			VkPipelineViewportStateCreateInfo viewportState =
-				vks::initializers::pipelineViewportStateCreateInfo(1, 1);
-
-			VkPipelineMultisampleStateCreateInfo multisampleState =
-				vks::initializers::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT);
-
-			std::vector<VkDynamicState> dynamicStateEnables = {
-				VK_DYNAMIC_STATE_VIEWPORT,
-				VK_DYNAMIC_STATE_SCISSOR
-			};
-			VkPipelineDynamicStateCreateInfo dynamicState =
-				vks::initializers::pipelineDynamicStateCreateInfo(dynamicStateEnables);
-
-			VkGraphicsPipelineCreateInfo pipelineCreateInfo =
-				vks::initializers::pipelineCreateInfo(pipelineLayout, renderPass);
-
-			std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
-
-			pipelineCreateInfo.pInputAssemblyState = &inputAssemblyState;
-			pipelineCreateInfo.pRasterizationState = &rasterizationState;
-			pipelineCreateInfo.pColorBlendState = &colorBlendState;
-			pipelineCreateInfo.pMultisampleState = &multisampleState;
-			pipelineCreateInfo.pViewportState = &viewportState;
-			pipelineCreateInfo.pDepthStencilState = &depthStencilState;
-			pipelineCreateInfo.pDynamicState = &dynamicState;
-			pipelineCreateInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
-			pipelineCreateInfo.pStages = shaderStages.data();
-
-			// Vertex bindings an attributes
-			// Binding description
-			std::vector<VkVertexInputBindingDescription> vertexInputBindings = {
-				vks::initializers::vertexInputBindingDescription(0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX),
-			};
-
-			// Attribute descriptions
-			std::vector<VkVertexInputAttributeDescription> vertexInputAttributes = {
-				vks::initializers::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0),					// Position
-				vks::initializers::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32B32_SFLOAT, sizeof(float) * 3),	// Color
-			};
-
-			VkPipelineVertexInputStateCreateInfo vertexInputState = vks::initializers::pipelineVertexInputStateCreateInfo();
-			vertexInputState.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexInputBindings.size());
-			vertexInputState.pVertexBindingDescriptions = vertexInputBindings.data();
-			vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size());
-			vertexInputState.pVertexAttributeDescriptions = vertexInputAttributes.data();
-
-			pipelineCreateInfo.pVertexInputState = &vertexInputState;
-
-			if (commandLineParser.isSet("shaders")) {
-				shaderDir = commandLineParser.getValueAsString("shaders", "glsl");
-			}
-			const std::string shadersPath = getShaderBasePath() + shaderDir + "/intervoxtest2/";
-
-			shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-			shaderStages[0].pName = "main";
-			shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-			shaderStages[1].pName = "main";
-#if defined(VK_USE_PLATFORM_ANDROID_KHR)
-			shaderStages[0].module = vks::tools::loadShader(androidapp->activity->assetManager, (shadersPath + "triangle.vert.spv").c_str(), device);
-			shaderStages[1].module = vks::tools::loadShader(androidapp->activity->assetManager, (shadersPath + "triangle.frag.spv").c_str(), device);
-#else
-			shaderStages[0].module = vks::tools::loadShader((shadersPath + "triangle.vert.spv").c_str(), device);
-			shaderStages[1].module = vks::tools::loadShader((shadersPath + "triangle.frag.spv").c_str(), device);
-#endif
-			shaderModules = { shaderStages[0].module, shaderStages[1].module };
-			VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCreateInfo, nullptr, &pipeline));
-		}
-#else
         fRenderCommandSettings.fCamera.type = Camera::CameraType::lookat;
         fRenderCommandSettings.fCamera.setPosition(glm::vec3(0.0f, 0.0f, -2.5f));
         fRenderCommandSettings.fCamera.setRotation(glm::vec3(0.0f));
@@ -914,7 +487,7 @@ public:
         meshPipeline->setupDescripterSets(descriptorPool);
         meshPipeline->setupPipeline(getShadersPath(), renderPass, pipelineCache);
         meshPipeline->updateUniformBuffer(fRenderCommandSettings);
-#endif
+        
 		/*
 			Command buffer creation
 		*/
@@ -956,37 +529,10 @@ public:
 			scissor.extent.width = width;
 			scissor.extent.height = height;
 			vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-#if !USE_MY_PIPELINE
-			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-
-			// Render scene
-			VkDeviceSize offsets[1] = { 0 };
-			vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
-			vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-			std::vector<glm::vec3> pos = {
-				glm::vec3(-1.5f, 0.0f, -4.0f),
-				glm::vec3( 0.0f, 0.0f, -2.5f),
-				glm::vec3( 1.5f, 0.0f, -4.0f),
-			};
-
-			for (auto v : pos) {
-				glm::mat4 mvpMatrix = glm::perspective(glm::radians(60.0f), (float)width / (float)height, 0.1f, 256.0f) * glm::translate(glm::mat4(1.0f), v);
-				vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mvpMatrix), &mvpMatrix);
-				vkCmdDrawIndexed(commandBuffer, 3, 1, 0, 0, 0);
-			}
-
-			vkCmdEndRenderPass(commandBuffer);
-            VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
-
-            submitWork(commandBuffer, queue);
-#else
             meshPipeline->Draw(commandBuffer, fRenderCommandSettings);
             vkCmdEndRenderPass(commandBuffer);
             
             fVulkanDevice->flushCommandBuffer(commandBuffer, queue);
-#endif
-
 
 			vkDeviceWaitIdle(getDevice());
 		}
@@ -1137,12 +683,6 @@ public:
 
 	~VulkanExample()
 	{
-#if !USE_MY_PIPELINE
-		vkDestroyBuffer(device, vertexBuffer, nullptr);
-		vkFreeMemory(device, vertexMemory, nullptr);
-		vkDestroyBuffer(device, indexBuffer, nullptr);
-		vkFreeMemory(device, indexMemory, nullptr);
-#endif
 		vkDestroyImageView(getDevice(), colorAttachment.view, nullptr);
 		vkDestroyImage(getDevice(), colorAttachment.image, nullptr);
 		vkFreeMemory(getDevice(), colorAttachment.memory, nullptr);
@@ -1151,41 +691,15 @@ public:
 		vkFreeMemory(getDevice(), depthAttachment.memory, nullptr);
 		vkDestroyRenderPass(getDevice(), renderPass, nullptr);
 		vkDestroyFramebuffer(getDevice(), framebuffer, nullptr);
-#if !USE_MY_PIPELINE
-		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-		vkDestroyPipeline(device, pipeline, nullptr);
-#else
         vkDestroyDescriptorPool(getDevice(), descriptorPool, nullptr);
         meshPipeline = nullptr;
-#endif
 		vkDestroyPipelineCache(getDevice(), pipelineCache, nullptr);
-#if !USE_VULKAN_DEVICE
-		vkDestroyCommandPool(getDevice(), commandPool, nullptr);
-#endif
-#if !USE_MY_PIPELINE
-		for (auto shadermodule : shaderModules) {
-			vkDestroyShaderModule(device, shadermodule, nullptr);
-		}
-#endif
-#if USE_VULKAN_DEVICE
         if (fVulkanDevice != nullptr){
             delete fVulkanDevice;
             fVulkanDevice = nullptr;
         }
-#else
-		vkDestroyDevice(getDevice(), nullptr);
-#endif
 #if DEBUG
-#if USE_VULKAN_DEBUG
         vks::debug::freeDebugCallback(instance);
-#else
-		if (debugReportCallback) {
-			PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallback = reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>(vkGetInstanceProcAddr(instance, "vkDestroyDebugReportCallbackEXT"));
-			assert(vkDestroyDebugReportCallback);
-			vkDestroyDebugReportCallback(instance, debugReportCallback, nullptr);
-		}
-#endif
 #endif
 		vkDestroyInstance(instance, nullptr);
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
